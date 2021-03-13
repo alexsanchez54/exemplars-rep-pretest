@@ -1,0 +1,119 @@
+---
+title: "Familiarity & valence for famous individuals"
+author: "Alexander Sanchez"
+date: "3/12/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(readr)
+```
+
+```{r US citizens}
+
+#identify participants who are US citizens
+
+demo <- read_csv("raw_data/demographics.csv",
+                 col_types = cols(characteristic = col_character(),
+                                  value = col_character(),
+                                  user_id = col_double(),
+                                  study_name = col_character(),
+                                  X5 = col_logical())) %>% 
+  select(-X5)
+
+demo_us <- demo %>% 
+  filter(characteristic == "citizenship",
+         value == "us") %>% 
+  select(user_id)
+
+sessions <- read_csv("raw_data/sessions.csv",
+                     col_types = 
+                       cols(session_id = col_double(),
+                                        user_id = col_double(),
+                                        study_name = col_character(),
+                                        session_date = col_character(),
+                                        session_status = col_character(),
+                                        creation_date = col_character(),
+                                        last_update_date = col_character(),
+                                        previous_session_id = col_double(),
+                                        previous_session_schema = col_character(),
+                                        referrer = col_character(),
+                                        study_url = col_character(),
+                                        user_agent = col_character())) %>% 
+  select(session_id, user_id)
+
+users_us <- inner_join(sessions, demo_us, by = "user_id") %>% 
+  select(session_id)
+
+```
+
+
+```{r filter pretest}
+
+#select only US citizens from the pretest
+
+pretest <- read_csv("raw_data/explicit.csv",
+              col_types = cols(task_number = col_double(),
+                               question_number = col_double(),
+                               questionnaire_name = col_character(),
+                               question_name = col_character(),
+                               question_response = col_character(),
+                               attempt = col_double(),
+                               study_name = col_character(),
+                               session_id = col_double()))
+
+filter_pretest <- pretest %>% 
+  select(- study_name, - attempt, - task_number) %>% 
+  filter(questionnaire_name == "pretest",
+         str_detect(question_name, pattern = "rt$", negate = TRUE))
+
+pretest_us <- inner_join(users_us, filter_pretest, by = "session_id") %>% 
+  select(- question_number, - questionnaire_name) %>% 
+  mutate(question_response = as.numeric(question_response)) %>% 
+  filter(question_response != -999)
+```
+
+```{r Familiarity table}
+familiarity <- pretest_us %>% 
+  group_by(question_name) %>% 
+  summarize(avg_fam = mean(question_response), .groups = "drop") %>% 
+  filter(str_detect(question_name, pattern = "1$")) %>% 
+  arrange(avg_fam)
+```
+
+```{r Familiarity plot}
+familiarity %>%
+  mutate(question_name = str_replace(question_name, pattern = "1", replacement = "")) %>% 
+  ggplot(aes(fct_reorder(question_name, avg_fam, .desc = TRUE), avg_fam)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Average recognizability of famous individuals",
+       subtitle = "All participants US citizens; lower values indicate greater familiarity",
+       y = "Recognizability",
+       x = "Famous individual",
+       caption = "Source: Project Implicit")
+```
+
+```{r Valence table}
+valence <- pretest_us %>% 
+  group_by(question_name) %>% 
+  summarize(avg_val = mean(question_response), .groups = "drop") %>% 
+  filter(str_detect(question_name, pattern = "_r$")) %>% 
+  arrange(avg_val)
+```
+
+```{r Valence plot}
+valence %>%
+  mutate(question_name = str_replace(question_name, pattern = "_r", replacement = "")) %>% 
+  ggplot(aes(fct_reorder(question_name, avg_val), avg_val)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Average feelings of coldness/warmth toward famous individuals",
+       subtitle = "All participants US citizens; positive values indicate warmer feelings",
+       y = "Explicit attitdues",
+       x = "Famous individual",
+       caption = "Source: Project Implicit")
+```
+
