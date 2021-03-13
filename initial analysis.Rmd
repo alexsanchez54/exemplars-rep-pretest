@@ -76,22 +76,22 @@ pretest_us <- inner_join(users_us, filter_pretest, by = "session_id") %>%
 ```
 
 ```{r Familiarity table}
-familiarity <- pretest_us %>% 
-  group_by(question_name) %>% 
-  summarize(avg_fam = mean(question_response), .groups = "drop") %>% 
+familiarity <- pretest_us %>%
   filter(str_detect(question_name, pattern = "1$")) %>% 
-  arrange(avg_fam)
+  mutate(question_response = map_dbl(question_response, ~ ifelse(. == 2, 0, 1))) %>% 
+  group_by(question_name) %>% 
+  summarize(prop_fam = sum(question_response)/224*100)
 ```
 
 ```{r Familiarity plot}
 familiarity %>%
   mutate(question_name = str_replace(question_name, pattern = "1", replacement = "")) %>% 
-  ggplot(aes(fct_reorder(question_name, avg_fam, .desc = TRUE), avg_fam)) +
+  ggplot(aes(fct_reorder(question_name, prop_fam), prop_fam)) +
   geom_col() +
   coord_flip() +
   labs(title = "Average recognizability of famous individuals",
        subtitle = "All participants US citizens; lower values indicate greater familiarity",
-       y = "Recognizability",
+       y = "Percent of participants who recognized the individual",
        x = "Famous individual",
        caption = "Source: Project Implicit")
 ```
@@ -113,6 +113,52 @@ valence %>%
   labs(title = "Average feelings of coldness/warmth toward famous individuals",
        subtitle = "All participants US citizens; positive values indicate warmer feelings",
        y = "Explicit attitdues",
+       x = "Famous individual",
+       caption = "Source: Project Implicit")
+```
+
+```{r weighted liking score}
+name_familiarity <- familiarity %>% 
+  mutate(question_name = str_remove(question_name, pattern = "1"))
+  
+name_valence <- valence %>% 
+  mutate(question_name = str_remove(question_name, pattern = "_r"))
+
+combined <- name_familiarity %>% 
+  inner_join(name_valence, by = "question_name") %>% 
+  mutate(weighted_avg = prop_fam * avg_val) %>% 
+  arrange(desc(weighted_avg))
+```
+
+```{r Weighted liking plot}
+combined %>%
+  slice(1:20) %>% 
+  ggplot(aes(fct_reorder(question_name, weighted_avg), weighted_avg)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Weighted liking score, adjusted for how well-known someone is",
+       subtitle = "All participants US citizens; positive values indicate warmer feelings",
+       y = "Weighted liking score",
+       x = "Famous individual",
+       caption = "Source: Project Implicit")
+```
+```{r weighted disliking score}
+disliked_weighted <- combined %>% 
+  arrange(weighted_avg) %>% 
+  slice(1:19) %>% 
+  mutate(avg_val = map_dbl(avg_val, ~ . * (-1))) %>% 
+  mutate(weighted_avg = prop_fam * avg_val)
+```
+
+```{r}
+disliked_weighted %>%
+  slice(1:20) %>% 
+  ggplot(aes(fct_reorder(question_name, weighted_avg), weighted_avg)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Weighted disliking score, adjusted for how well-known someone is",
+       subtitle = "All participants US citizens; positive values indicate colder feelings",
+       y = "Weighted disliking score",
        x = "Famous individual",
        caption = "Source: Project Implicit")
 ```
